@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mes rendez-vous — Tabib.dz</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<header><div id="app-header"></div></header>
+<main>
+  <div id="just-booked-banner" class="hidden confirm-recap" style="margin-bottom:24px; border-color:var(--green);"></div>
+  <h1>Mes rendez-vous</h1>
+  <div class="appt-list-title">À venir</div>
+  <div id="appt-upcoming">Chargement…</div>
+  <div class="appt-list-title">Passés / annulés</div>
+  <div id="appt-past"></div>
+</main>
+<script src="/js/common.js"></script>
+<script>
+async function loadAppointments(){
+  const appts = await api('/appointments/me');
+  const now = new Date();
+
+  const upcoming = appts.filter(a => a.status === 'confirmed');
+  const past = appts.filter(a => a.status !== 'confirmed');
+
+  document.getElementById('appt-upcoming').innerHTML = upcoming.length
+    ? upcoming.map(a => apptCard(a)).join('')
+    : '<p class="empty-note">Aucun rendez-vous à venir. <a href="/index.html">Trouver un médecin</a></p>';
+
+  document.getElementById('appt-past').innerHTML = past.length
+    ? past.map(a => apptCard(a)).join('')
+    : '<p class="empty-note">Aucun historique pour le moment.</p>';
+}
+
+function apptCard(a){
+  const f = fmtDay(a.date, true);
+  const statusLabel = a.status === 'confirmed' ? 'Confirmé' : (a.status === 'cancelled' ? 'Annulé' : 'Terminé');
+  return `<div class="appt-card">
+    <div class="appt-date-box"><span class="m">${monthNames[toDate(a.date).getMonth()]}</span><span class="d">${f.n}</span></div>
+    <div class="appt-info">
+      <p class="name">${a.doctor ? a.doctor.name : 'Médecin'}</p>
+      <p class="meta">${a.time} ${a.type==='tele' ? '· Téléconsultation' : '· Au cabinet'}${a.reason ? ' · ' + a.reason : ''}</p>
+    </div>
+    <span class="appt-status ${a.status}">${statusLabel}</span>
+    ${a.status === 'confirmed' ? `<button class="btn-danger" onclick="cancelAppt(${a.id})">Annuler</button>` : ''}
+  </div>`;
+}
+
+async function cancelAppt(id){
+  if(!confirm("Annuler ce rendez-vous ?")) return;
+  await api(`/appointments/${id}`, { method:'PATCH', body:{ status:'cancelled' } });
+  loadAppointments();
+}
+
+(async function init(){
+  await initHeader('account');
+  if(!requireLogin('patient')) return;
+
+  const params = new URLSearchParams(window.location.search);
+  if(params.get('justBooked')){
+    const banner = document.getElementById('just-booked-banner');
+    banner.classList.remove('hidden');
+    banner.innerHTML = '<div class="row"><span>✓ Rendez-vous confirmé</span><span>Un rappel vous sera envoyé avant la consultation.</span></div>';
+  }
+
+  loadAppointments();
+})();
+</script>
+</body>
+</html>

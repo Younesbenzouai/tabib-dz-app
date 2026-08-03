@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Se connecter — Tabib.dz</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<header><div id="app-header"></div></header>
+<main>
+  <div class="narrow">
+    <div class="auth-card">
+      <h1>Connexion</h1>
+      <p class="sub" id="sub-text">Accédez à votre espace patient.</p>
+      <div class="demo-hint" id="demo-hint"></div>
+      <label style="display:block; font-size:12.5px; font-weight:600; color:var(--muted); text-transform:uppercase; margin-bottom:5px;">Email</label>
+      <input id="email" style="width:100%; padding:11px 12px; border:1px solid var(--border); border-radius:7px; font-size:14px; margin-bottom:14px;" />
+      <label style="display:block; font-size:12.5px; font-weight:600; color:var(--muted); text-transform:uppercase; margin-bottom:5px;">Mot de passe</label>
+      <input id="password" type="password" style="width:100%; padding:11px 12px; border:1px solid var(--border); border-radius:7px; font-size:14px; margin-bottom:8px;" />
+      <div id="err" class="hidden error-note"></div>
+      <button class="btn-primary" style="width:100%; padding:12px; margin-top:14px;" onclick="doLogin()">Se connecter</button>
+      <p style="font-size:13.5px; color:var(--muted); margin-top:16px; text-align:center;">
+        Pas encore de compte ? <a href="/register.html" id="register-link">Créer un compte</a>
+      </p>
+    </div>
+  </div>
+</main>
+<script src="/js/common.js"></script>
+<script>
+const params = new URLSearchParams(window.location.search);
+const role = params.get('role') === 'doctor' ? 'doctor' : 'patient';
+const next = params.get('next');
+
+document.getElementById('sub-text').textContent = role === 'doctor'
+  ? "Accédez à votre espace médecin."
+  : "Accédez à votre espace patient.";
+document.getElementById('demo-hint').textContent = role === 'doctor'
+  ? "Compte de démo : yacine.belkacem@tabib.dz / demo1234"
+  : "Compte de démo : patient@demo.dz / demo1234";
+document.getElementById('register-link').href = "/register.html?role=" + role;
+
+async function doLogin(){
+  const errEl = document.getElementById('err');
+  errEl.classList.add('hidden');
+  try{
+    const user = await api('/auth/login', { method:'POST', body:{
+      email: document.getElementById('email').value,
+      password: document.getElementById('password').value
+    }});
+    if(next){ window.location.href = next; return; }
+    window.location.href = user.role === 'doctor' ? '/pro.html' : '/account.html';
+  }catch(e){
+    errEl.textContent = e.message;
+    errEl.classList.remove('hidden');
+  }
+}
+
+initHeader();
+</script>
+</body>
+</html>

@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Prendre rendez-vous — Tabib.dz</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<header><div id="app-header"></div></header>
+<main>
+  <button class="back-link" onclick="window.location.href='/index.html'">← Retour aux résultats</button>
+
+  <div id="doctor-content">Chargement…</div>
+
+  <!-- Formulaire de réservation (affiché après sélection d'un créneau) -->
+  <div id="booking-form" class="hidden" style="max-width:520px; margin:0 auto;">
+    <div class="recap-card">
+      <div class="avatar" id="b-avatar" style="width:48px;height:48px;font-size:14px;"></div>
+      <div class="info">
+        <p class="name" id="b-name"></p>
+        <p class="dt" id="b-datetime"></p>
+      </div>
+    </div>
+    <div class="card-box form-card">
+      <label>Motif de la consultation (optionnel)</label>
+      <input id="b-reason" placeholder="Douleurs, suivi, renouvellement..." />
+      <div class="reminder-note">🔔 Un rappel sera envoyé avant votre rendez-vous.</div>
+      <div id="booking-error" class="hidden error-note"></div>
+      <button class="btn-primary" id="confirm-btn" onclick="confirmBooking()">Confirmer le rendez-vous</button>
+    </div>
+  </div>
+</main>
+
+<script src="/js/common.js"></script>
+<script>
+const params = new URLSearchParams(window.location.search);
+const doctorId = parseInt(params.get('id'));
+let doctor = null;
+let schedule = []; // [{date, times:[...]}]
+let currentDayIndex = 0;
+let selectedConsult = 'cabinet';
+let pendingSlot = null;
+
+function buildSchedule(availability){
+  const byDate = {};
+  availability.forEach(s => {
+    if(s.status !== 'open') return;
+    byDate[s.date] = byDate[s.date] || [];
+    byDate[s.date].push(s.time);
+  });
+  const dates = Object.keys(byDate).sort();
+  return dates.map(date => ({date, times: byDate[date].sort()}));
+}
+
+async function loadDoctor(){
+  doctor = await api(`/doctors/${doctorId}`);
+  const availability = await api(`/doctors/${doctorId}/availability`);
+  schedule = buildSchedule(availability);
+
+  document.getElementById('doctor-content').innerHTML = `
+    <div class="profile-head">
+      <div class="avatar" style="background:${colorFor(doctor.id)}; width:84px; height:84px; font-size:24px;">${doctor.init}</div>
+      <div>
+        <h1>${doctor.name}</h1>
+        <p class="spec">${doctor.spec}${doctor.price ? ' · ' + doctor.price : ''}</p>
+        <p class="addr">${doctor.addr}</p>
+      </div>
+    </div>
+    <div class="card-box">
+      <h3>Prendre rendez-vous</h3>
+      ${doctor.tele ? `<div class="consult-toggle">
+        <div class="toggle-opt sel" id="toggle-cabinet" onclick="setConsult('cabinet')">Au cabinet</div>
+        <div class="toggle-opt" id="toggle-tele" onclick="setConsult('tele')">Téléconsultation</div>
+      </div>` : ''}
+      <div class="day-tabs" id="day-tabs"></div>
+      <div class="time-grid" id="time-grid"></div>
+    </div>
+  `;
+
+  // preselect date/time from query string if present (coming from home page quick-slot)
+  const qDate = params.get('date'), qTime = params.get('time');
+  if(qDate){
+    currentDayIndex = schedule.findIndex(d => d.date === qDate);
+    if(currentDayIndex < 0) currentDayIndex = 0;
+  }
+
+  renderDayTabs();
+  renderTimeGrid();
+
+  if(qDate && qTime) goBooking(qDate, qTime);
+}
+
+function setConsult(type){
+  selectedConsult = type;
+  document.getElementById('toggle-cabinet').classList.toggle('sel', type==='cabinet');
+  document.getElementById('toggle-tele').classList.toggle('sel', type==='tele');
+}
+
+function renderDayTabs(){
+  const wrap = document.getElementById('day-tabs');
+  if(!schedule.length){ wrap.innerHTML = ''; return; }
+  wrap.innerHTML = schedule.map((day,i) => {
+    const f = fmtDay(day.date, true);
+    return `<div class="day-tab ${i===currentDayIndex?'sel':''}" onclick="selectDay(${i})"><div class="d">${f.d}</div><div class="n">${f.n}</div></div>`;
+  }).join('');
+}
+function selectDay(i){ currentDayIndex = i; renderDayTabs(); renderTimeGrid(); }
+function renderTimeGrid(){
+  const grid = document.getElementById('time-grid');
+  if(!schedule.length){ grid.innerHTML = '<p class="no-slots">Aucun créneau disponible cette semaine.</p>'; return; }
+  const day = schedule[currentDayIndex];
+  grid.innerHTML = day.times.map(t => `<div class="time-slot" onclick="goBooking('${day.date}','${t}')">${t}</div>`).join('');
+}
+
+function goBooking(date, time){
+  pendingSlot = {date, time};
+  document.getElementById('b-avatar').style.background = colorFor(doctor.id);
+  document.getElementById('b-avatar').textContent = doctor.init;
+  document.getElementById('b-name').textContent = doctor.name;
+  document.getElementById('b-datetime').textContent = fmtDay(date) + " à " + time + (selectedConsult==='tele' ? " · Téléconsultation" : " · Au cabinet");
+  document.getElementById('booking-form').classList.remove('hidden');
+  document.getElementById('booking-form').scrollIntoView({behavior:'smooth'});
+}
+
+async function confirmBooking(){
+  const errEl = document.getElementById('booking-error');
+  errEl.classList.add('hidden');
+
+  await initHeader(); // refresh currentUser
+  if(!currentUser){
+    window.location.href = '/login.html?next=' + encodeURIComponent(window.location.href);
+    return;
+  }
+  if(currentUser.role !== 'patient'){
+    errEl.textContent = "Connectez-vous avec un compte patient pour réserver.";
+    errEl.classList.remove('hidden');
+    return;
+  }
+
+  const btn = document.getElementById('confirm-btn');
+  btn.disabled = true; btn.textContent = "Confirmation…";
+  try{
+    const appt = await api('/appointments', { method:'POST', body:{
+      doctorId, date: pendingSlot.date, time: pendingSlot.time,
+      type: selectedConsult, reason: document.getElementById('b-reason').value
+    }});
+    window.location.href = `/account.html?justBooked=${appt.id}`;
+  }catch(e){
+    errEl.textContent = e.message;
+    errEl.classList.remove('hidden');
+    btn.disabled = false; btn.textContent = "Confirmer le rendez-vous";
+  }
+}
+
+(async function init(){
+  await initHeader('home');
+  await loadDoctor();
+})();
+</script>
+</body>
+</html>

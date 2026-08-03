@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Créer un compte — Tabib.dz</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<header><div id="app-header"></div></header>
+<main>
+  <div class="narrow">
+    <div class="auth-card">
+      <h1>Créer un compte</h1>
+      <p class="sub">Rejoignez Tabib.dz en tant que :</p>
+      <div class="role-toggle">
+        <div class="toggle-opt sel" id="toggle-patient" onclick="setRole('patient')">Patient</div>
+        <div class="toggle-opt" id="toggle-doctor" onclick="setRole('doctor')">Médecin</div>
+      </div>
+
+      <label style="display:block; font-size:12.5px; font-weight:600; color:var(--muted); text-transform:uppercase; margin-bottom:5px;">Nom complet</label>
+      <input id="fullName" placeholder="Nadia Meziane" style="width:100%; padding:11px 12px; border:1px solid var(--border); border-radius:7px; font-size:14px; margin-bottom:14px;" />
+
+      <label style="display:block; font-size:12.5px; font-weight:600; color:var(--muted); text-transform:uppercase; margin-bottom:5px;">Email</label>
+      <input id="email" style="width:100%; padding:11px 12px; border:1px solid var(--border); border-radius:7px; font-size:14px; margin-bottom:14px;" />
+
+      <label style="display:block; font-size:12.5px; font-weight:600; color:var(--muted); text-transform:uppercase; margin-bottom:5px;">Téléphone</label>
+      <input id="phone" placeholder="05 55 12 34 56" style="width:100%; padding:11px 12px; border:1px solid var(--border); border-radius:7px; font-size:14px; margin-bottom:14px;" />
+
+      <label style="display:block; font-size:12.5px; font-weight:600; color:var(--muted); text-transform:uppercase; margin-bottom:5px;">Mot de passe (6 caractères min.)</label>
+      <input id="password" type="password" style="width:100%; padding:11px 12px; border:1px solid var(--border); border-radius:7px; font-size:14px; margin-bottom:8px;" />
+
+      <div id="err" class="hidden error-note"></div>
+      <button class="btn-primary" style="width:100%; padding:12px; margin-top:14px;" onclick="doRegister()">Créer mon compte</button>
+      <p style="font-size:13.5px; color:var(--muted); margin-top:16px; text-align:center;">
+        Déjà inscrit ? <a href="/login.html">Se connecter</a>
+      </p>
+    </div>
+  </div>
+</main>
+<script src="/js/common.js"></script>
+<script>
+let selectedRole = 'patient';
+const params = new URLSearchParams(window.location.search);
+if(params.get('role') === 'doctor') setRole('doctor');
+
+function setRole(role){
+  selectedRole = role;
+  document.getElementById('toggle-patient').classList.toggle('sel', role==='patient');
+  document.getElementById('toggle-doctor').classList.toggle('sel', role==='doctor');
+}
+
+async function doRegister(){
+  const errEl = document.getElementById('err');
+  errEl.classList.add('hidden');
+  try{
+    const user = await api('/auth/register', { method:'POST', body:{
+      fullName: document.getElementById('fullName').value,
+      email: document.getElementById('email').value,
+      phone: document.getElementById('phone').value,
+      password: document.getElementById('password').value,
+      role: selectedRole
+    }});
+    window.location.href = user.role === 'doctor' ? '/pro.html' : '/account.html';
+  }catch(e){
+    errEl.textContent = e.message;
+    errEl.classList.remove('hidden');
+  }
+}
+
+initHeader();
+</script>
+</body>
+</html>

@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Espace médecin — Tabib.dz</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<header><div id="app-header"></div></header>
+<main>
+  <div id="doctor-topbar">Chargement…</div>
+  <div class="stat-grid" id="doc-stats"></div>
+
+  <div class="doc-tabs">
+    <button class="doc-tab active" id="dtab-today" onclick="showDocTab('today')">Aujourd'hui</button>
+    <button class="doc-tab" id="dtab-agenda" onclick="showDocTab('agenda')">Mon agenda</button>
+    <button class="doc-tab" id="dtab-patients" onclick="showDocTab('patients')">Mes patients</button>
+  </div>
+
+  <div id="doc-panel-today"></div>
+  <div id="doc-panel-agenda" class="hidden"></div>
+  <div id="doc-panel-patients" class="hidden"></div>
+</main>
+
+<script src="/js/common.js"></script>
+<script>
+let myDoctor = null;
+let myAppointments = [];
+let myAvailability = [];
+let currentDocTab = 'today';
+
+async function loadAll(){
+  myDoctor = await api('/pro/me');
+  myAppointments = await api('/pro/appointments');
+  myAvailability = await api('/pro/availability');
+
+  document.getElementById('doctor-topbar').innerHTML = `
+    <div class="doctor-topbar">
+      <div class="avatar" style="background:${colorFor(myDoctor.id)}">${myDoctor.init}</div>
+      <div class="who">
+        <p class="name">${myDoctor.name}</p>
+        <p class="spec">${myDoctor.spec} · ${myDoctor.addr || 'Adresse non renseignée'}</p>
+      </div>
+    </div>
+  `;
+
+  const today = todayISO();
+  const todayCount = myAppointments.filter(a => a.date === today && a.status==='confirmed').length;
+  const weekCount = myAppointments.filter(a => a.status === 'confirmed').length;
+  const openCount = myAvailability.filter(s => s.status === 'open').length;
+
+  document.getElementById('doc-stats').innerHTML = `
+    <div class="stat-card"><div class="label">RDV aujourd'hui</div><div class="val">${todayCount}</div></div>
+    <div class="stat-card"><div class="label">RDV confirmés</div><div class="val">${weekCount}</div></div>
+    <div class="stat-card"><div class="label">Créneaux libres</div><div class="val">${openCount}</div></div>
+    <div class="stat-card"><div class="label">Note patients</div><div class="val">★ ${myDoctor.rating || '—'}</div></div>
+  `;
+
+  renderToday();
+  renderAgenda();
+  renderPatients();
+}
+
+function renderToday(){
+  const today = todayISO();
+  const list = myAppointments.filter(a => a.date === today && a.status === 'confirmed').sort((a,b)=>a.time.localeCompare(b.time));
+  const panel = document.getElementById('doc-panel-today');
+  panel.innerHTML = list.length ? list.map(a => `
+    <div class="today-appt">
+      <div class="time-box">${a.time}</div>
+      <div class="appt-info">
+        <p class="name">${a.patientName}</p>
+        <p class="meta">${a.type==='tele' ? 'Téléconsultation' : 'Au cabinet'}${a.reason ? ' · ' + a.reason : ''}</p>
+      </div>
+      <div class="mini-actions">
+        <button class="mini-btn done" onclick="setApptStatus(${a.id},'done')">Marquer vu</button>
+        <button class="mini-btn" onclick="setApptStatus(${a.id},'cancelled')">Annuler</button>
+      </div>
+    </div>
+  `).join('') : '<p class="empty-note">Aucun rendez-vous programmé aujourd\'hui.</p>';
+}
+
+async function setApptStatus(id, status){
+  await api(`/pro/appointments/${id}`, { method:'PATCH', body:{ status } });
+  await loadAll();
+  showDocTab(currentDocTab);
+}
+
+function renderAgenda(){
+  const panel = document.getElementById('doc-panel-agenda');
+  const byDate = {};
+  myAvailability.forEach(s => { byDate[s.date] = byDate[s.date] || []; byDate[s.date].push(s); });
+  const dates = Object.keys(byDate).sort().slice(0,6);
+
+  const cols = dates.map(date => {
+    const f = fmtDay(date, true);
+    const slots = byDate[date].sort((a,b)=>a.time.localeCompare(b.time)).map(s => {
+      const cls = s.status === 'booked' ? 'booked' : (s.status === 'blocked' ? 'blocked' : '');
+      const label = s.status === 'booked' ? s.time + ' · pris' : (s.status === 'blocked' ? s.time + ' · fermé' : s.time);
+      const click = s.status === 'booked' ? '' : `onclick="toggleSlot('${date}','${s.time}')"`;
+      return `<button class="agenda-slot ${cls}" ${click}>${label}</button>`;
+    }).join('');
+    return `<div class="agenda-day-col"><h4>${f.d} ${f.n}</h4>${slots || '<p style="font-size:12px;color:var(--muted);text-align:center;">—</p>'}</div>`;
+  }).join('');
+
+  panel.innerHTML = `<p class="agenda-hint">Cliquez sur un créneau libre pour l'ouvrir ou le fermer aux réservations.</p><div class="agenda-grid">${cols}</div>`;
+}
+
+async function toggleSlot(date, time){
+  try{
+    await api('/pro/availability/toggle', { method:'POST', body:{ date, time } });
+    myAvailability = await api('/pro/availability');
+    renderAgenda();
+  }catch(e){
+    alert(e.message);
+  }
+}
+
+function renderPatients(){
+  const panel = document.getElementById('doc-panel-patients');
+  const byPatient = {};
+  myAppointments.forEach(a => {
+    if(!byPatient[a.patientName]) byPatient[a.patientName] = { name:a.patientName, phone:a.patientPhone, count:0, last:a.date };
+    byPatient[a.patientName].count++;
+    if(a.date > byPatient[a.patientName].last) byPatient[a.patientName].last = a.date;
+  });
+  const patients = Object.values(byPatient);
+  panel.innerHTML = patients.length ? patients.map((p,i) => `
+    <div class="patient-row">
+      <div class="avatar" style="background:${colorFor(i+1)}">${p.name.split(' ').map(w=>w[0]).join('').slice(0,2)}</div>
+      <div class="patient-info">
+        <p class="name">${p.name}</p>
+        <p class="meta">${p.phone || ''} · Dernier RDV : ${fmtDay(p.last)} · ${p.count} consultation${p.count>1?'s':''}</p>
+      </div>
+    </div>
+  `).join('') : '<p class="empty-note">Aucun patient pour le moment.</p>';
+}
+
+function showDocTab(tab){
+  currentDocTab = tab;
+  ['today','agenda','patients'].forEach(t => {
+    document.getElementById('doc-panel-'+t).classList.toggle('hidden', t!==tab);
+    document.getElementById('dtab-'+t).classList.toggle('active', t===tab);
+  });
+}
+
+(async function init(){
+  await initHeader('pro');
+  if(!requireLogin('doctor')) return;
+  await loadAll();
+})();
+</script>
+</body>
+</html>

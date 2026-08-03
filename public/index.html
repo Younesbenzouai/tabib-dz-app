@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tabib.dz — Trouvez un médecin et prenez rendez-vous</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<header><div id="app-header"></div></header>
+<main>
+  <div class="hero">
+    <div class="hero-inner">
+      <h1>Trouvez un médecin disponible près de chez vous</h1>
+      <div class="searchbar">
+        <div class="field">
+          <label>Motif / spécialité</label>
+          <select id="f-spec">
+            <option>Toutes spécialités</option>
+            <option>Généraliste</option>
+            <option>Cardiologue</option>
+            <option>Dermatologue</option>
+            <option>Pédiatre</option>
+            <option>Dentiste</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Où</label>
+          <select id="f-ville">
+            <option>Toute l'Algérie</option>
+            <option>Alger</option>
+            <option>Oran</option>
+            <option>Constantine</option>
+            <option>Annaba</option>
+          </select>
+        </div>
+        <button class="go" onclick="runSearch()">Rechercher</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="results-head">
+    <h2>Médecins disponibles</h2>
+    <span id="res-count"></span>
+  </div>
+  <div id="doc-list">Chargement…</div>
+</main>
+
+<script src="/js/common.js"></script>
+<script>
+let allDoctors = [];
+let availabilityCache = {};
+
+async function loadAvailability(doctorId){
+  if(availabilityCache[doctorId]) return availabilityCache[doctorId];
+  const slots = await api(`/doctors/${doctorId}/availability`);
+  availabilityCache[doctorId] = slots.filter(s => s.status === 'open').sort((a,b)=> (a.date+a.time).localeCompare(b.date+b.time));
+  return availabilityCache[doctorId];
+}
+
+async function renderResults(docs){
+  document.getElementById('res-count').textContent = docs.length + " médecin" + (docs.length!==1?'s':'') + " trouvé" + (docs.length!==1?'s':'');
+  const list = document.getElementById('doc-list');
+  list.innerHTML = docs.map(d => `<div class="doc-card" id="card-${d.id}">
+    <div class="avatar" style="background:${colorFor(d.id)}">${d.init}</div>
+    <div class="doc-main">
+      <a class="name" href="/doctor.html?id=${d.id}">${d.name}</a>
+      <p class="spec">${d.spec}</p>
+      <p class="addr">${d.addr}</p>
+      <div class="badges">
+        <span class="badge rating">★ ${d.rating || '—'} (${d.reviews||0})</span>
+        ${d.tele ? '<span class="badge tele">Téléconsultation</span>' : ''}
+      </div>
+    </div>
+    <div class="doc-slots">
+      <p>Prochaines disponibilités</p>
+      <div class="slot-row" id="slots-${d.id}">…</div>
+      <a class="see-more" href="/doctor.html?id=${d.id}">Voir plus de disponibilités →</a>
+    </div>
+  </div>`).join('');
+
+  docs.forEach(async d => {
+    const slots = (await loadAvailability(d.id)).slice(0,3);
+    const el = document.getElementById('slots-'+d.id);
+    el.innerHTML = slots.length
+      ? slots.map(s => `<a class="slot-pill" href="/doctor.html?id=${d.id}&date=${s.date}&time=${s.time}">${fmtDay(s.date,true).d} ${s.time}</a>`).join('')
+      : '<span style="font-size:13px;color:var(--muted)">Aucun créneau cette semaine</span>';
+  });
+}
+
+async function runSearch(){
+  const spec = document.getElementById('f-spec').value;
+  const ville = document.getElementById('f-ville').value;
+  const params = new URLSearchParams();
+  if(spec !== "Toutes spécialités") params.set('spec', spec);
+  if(ville !== "Toute l'Algérie") params.set('ville', ville);
+  const docs = await api('/doctors?' + params.toString());
+  renderResults(docs);
+}
+
+(async function init(){
+  await initHeader('home');
+  allDoctors = await api('/doctors');
+  renderResults(allDoctors);
+})();
+</script>
+</body>
+</html>
